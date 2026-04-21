@@ -85,6 +85,7 @@
       const startTimeRef = useRef(null);
       const pausedTimeRef = useRef(0);
       const audioContextRef = useRef(null);
+      const workerRef = useRef(null); // 新增：用來存放背景勞工的參照
 
       // --- 為背景計時器準備最新的狀態參照 ---
       const alarmTypeRef = useRef(alarmType);
@@ -175,10 +176,31 @@
 
       // --- 絕對防禦版的秒數核心 (不再依賴 React 渲染順序) ---
       useEffect(() => {
-        let intervalId;
+        // --- 新增：建立 Web Worker 防止瀏覽器在背景休眠 ---
+        if (!workerRef.current) {
+          const workerCode = `
+            let interval = null;
+            self.onmessage = function(e) {
+              if (e.data === 'start') {
+                if(interval) clearInterval(interval);
+                // 在背景每 100 毫秒喚醒一次主程式
+                interval = setInterval(() => self.postMessage('tick'), 100);
+              } else if (e.data === 'stop') {
+                clearInterval(interval);
+                interval = null;
+              }
+            };
+          `;
+          const blob = new Blob([workerCode], { type: 'application/javascript' });
+          workerRef.current = new Worker(URL.createObjectURL(blob));
+        }
+
         if (isRunning) { 
             startTimeRef.current = Date.now(); 
-            intervalId = setInterval(() => {
+            workerRef.current.postMessage('start'); // 指示背景勞工開始工作
+            
+            // 接收來自背景勞工的喚醒訊號
+            workerRef.current.onmessage = () => {
                 const now = Date.now();
                 const newElapsed = pausedTimeRef.current + (now - startTimeRef.current) / 1000;
                 
@@ -216,14 +238,18 @@
 
                     setElapsedTime(newElapsed); 
                 }
-            }, 100);
+            };
         } else { 
+            if (workerRef.current) workerRef.current.postMessage('stop');
             if (startTimeRef.current) {
                 pausedTimeRef.current += (Date.now() - startTimeRef.current) / 1000; 
                 startTimeRef.current = null; 
             }
         }
-        return () => clearInterval(intervalId);
+        
+        return () => {
+            if (workerRef.current) workerRef.current.postMessage('stop');
+        };
       }, [isRunning]);
 
       // 計算總時間與目前狀態供 UI 使用
