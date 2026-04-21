@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>視覺化分段計時器 - GitHub 強化版</title>
+  <title>視覺化分段計時器 - 最終完美修正版</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -97,7 +97,7 @@
       const prevSegmentIndexRef = useRef(0);
       const hasPlayedEndSoundRef = useRef(false);
 
-      // --- 音效解鎖 (解決 GitHub/HTTPS 自動播放限制) ---
+      // --- 音效解鎖與初始化 ---
       const initAudio = () => {
         if (!soundEnabledRef.current) return;
         try {
@@ -119,9 +119,9 @@
       const playSound = (type, isFinal = false) => {
         if (!soundEnabledRef.current) return;
         try {
+          initAudio(); // 確保每次播放前都檢查權限
           const ctx = audioContextRef.current;
           if (!ctx) return;
-          if (ctx.state === 'suspended') ctx.resume();
           
           const playTone = (freq, wave, startOffset, dur, vol) => {
             const osc = ctx.createOscillator();
@@ -140,7 +140,7 @@
         } catch (e) { console.error(e); }
       };
 
-      // --- Web Worker 背景心跳核心 ---
+      // --- 背景執行核心 ---
       useEffect(() => {
         if (!workerRef.current) {
           const workerCode = `
@@ -217,13 +217,21 @@
       };
 
       const toggleTimer = () => {
-        initAudio(); // 點擊瞬間強制啟動音效 Context
+        initAudio(); 
         if (isFinished) handleReset(); else setIsRunning(!isRunning);
       };
 
       const handleUpdateSegment = (i, f, v) => {
         const n = [...segments]; if (f === 'minutes') v = Math.max(1, parseInt(v) || 1);
         n[i][f] = v; setSegments(n); handleReset();
+      };
+
+      // --- 修復：刪除按鈕功能 ---
+      const handleRemoveSegment = (index) => {
+        if (segments.length <= 1) return;
+        const newSegments = segments.filter((_, i) => i !== index);
+        setSegments(newSegments);
+        handleReset();
       };
 
       const getArc = (startP, endP, cx = 150, cy = 150, r = 100) => {
@@ -285,7 +293,7 @@
                     </div>
 
                     <div className="flex items-center gap-4 lg:gap-6 w-full">
-                        <div className="bg-slate-50 rounded-3xl px-5 py-6 lg:px-6 lg:py-8 border border-slate-200 shadow-inner flex-1 flex flex-col justify-center">
+                        <div className="bg-slate-50 rounded-3xl px-5 py-6 lg:px-6 lg:py-10 border border-slate-200 shadow-inner flex-1 flex flex-col justify-center">
                             <div className="text-6xl lg:text-[5rem] font-mono font-bold text-slate-700 tracking-tighter leading-none mb-1">{currentStatus.seg && !isFinished ? format(currentStatus.rem) : '00:00'}</div>
                             <div className="text-sm font-bold text-slate-400 mt-2">本階段剩餘</div>
                         </div>
@@ -315,12 +323,17 @@
                                 <input type="color" value={s.color} onChange={e=>handleUpdateSegment(i,'color',e.target.value)} className="w-10 h-10 rounded cursor-pointer shrink-0 border-0 p-0"/>
                                 <input type="text" value={s.name} onChange={e=>handleUpdateSegment(i,'name',e.target.value)} className="flex-1 p-2 rounded-lg border text-sm focus:ring-2 focus:ring-blue-400 min-w-0" placeholder="活動名稱"/>
                                 <div className="flex items-center bg-white border rounded-lg px-2 shrink-0"><input type="number" min="1" value={s.minutes} onChange={e=>handleUpdateSegment(i,'minutes',e.target.value)} className="w-12 p-1 text-center font-bold outline-none"/><span className="text-xs text-slate-400">分</span></div>
-                                <button onClick={()=>handleRemoveSegment(i)} disabled={segments.length <= 1} className={`p-2 shrink-0 ${segments.length <= 1 ? 'text-slate-300' : 'text-red-400 hover:bg-red-50 rounded-lg'}`}><Trash2 size={20}/></button>
+                                {/* 修復後的刪除按鈕 */}
+                                <button onClick={()=>handleRemoveSegment(i)} disabled={segments.length <= 1} className={`p-2 shrink-0 ${segments.length <= 1 ? 'text-slate-300 pointer-events-none' : 'text-red-400 hover:bg-red-50 rounded-lg cursor-pointer'}`}><Trash2 size={20}/></button>
                             </div>
                         ))}
                     </div>
                     <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 shrink-0">
-                        <div className="flex items-center justify-between mb-3"><div className="text-sm font-bold text-slate-700">提示音類型</div><button onClick={()=>playSound(alarmTypeRef.current, true)} className="text-xs flex items-center bg-white border px-3 py-1.5 rounded-lg text-slate-600 shadow-sm hover:bg-slate-100"><Volume2 size={14} className="mr-1"/>試聽</button></div>
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-sm font-bold text-slate-700">提示音類型</div>
+                            {/* 修復後的試聽按鈕：確保在試聽前先進行 initAudio */}
+                            <button onClick={()=>{ initAudio(); playSound(alarmTypeRef.current, true); }} className="text-xs flex items-center bg-white border px-3 py-1.5 rounded-lg text-slate-600 shadow-sm hover:bg-slate-100"><Volume2 size={14} className="mr-1"/>試聽</button>
+                        </div>
                         <div className="flex flex-col sm:flex-row gap-3">
                             {['soft','medium','exciting'].map(t => (
                                 <label key={t} className={`flex-1 flex items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all ${alarmType===t?'border-blue-400 bg-blue-50 text-blue-600':'border-transparent bg-white text-slate-600 hover:border-slate-200'}`}>
